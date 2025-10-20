@@ -2,35 +2,21 @@
  * Copyright 2025 davidklyons
  * @license Apache-2.0, see LICENSE for full text.
  */
+
 import { LitElement, html, css } from "lit";
 import { DDDSuper } from "@haxtheweb/d-d-d/d-d-d.js";
 
 /**
  * `ice-planner`
- * A simple team ice cost calculator app
- * @element ice-planner
+ * Enhanced interactive version with URL sharing
  */
 export class IcePlanner extends DDDSuper(LitElement) {
   static get tag() {
     return "ice-planner";
   }
 
-  constructor() {
-    super();
-    // Default values per requirements
-    this.teamName = "My Hockey Team";
-    this.iceCost = 300;
-    this.hours = 50;
-    this.coachCost = 3000;
-    this.jerseyCost = 88;
-    this.transactionPercent = 0.02;
-    this.transactionFlat = 0.99;
-    this.players = 1;
-  }
-
   static get properties() {
     return {
-      ...super.properties,
       teamName: { type: String },
       iceCost: { type: Number },
       hours: { type: Number },
@@ -39,83 +25,52 @@ export class IcePlanner extends DDDSuper(LitElement) {
       transactionPercent: { type: Number },
       transactionFlat: { type: Number },
       players: { type: Number },
+      totalCost: { type: Number },
+      costPerPlayer: { type: Number },
+      shareLink: { type: String }
     };
   }
 
-  static get styles() {
-    return [
-      super.styles,
-      css`
-        :host {
-          display: block;
-          background-color: var(--ddd-theme-default-white);
-          color: var(--ddd-theme-default-coalyGray);
-          padding: var(--ddd-spacing-4);
-          border-radius: var(--ddd-radius-lg);
-        }
+  constructor() {
+    super();
+    // Default values
+    this.teamName = "My Hockey Team";
+    this.iceCost = 300;
+    this.hours = 50;
+    this.coachCost = 3000;
+    this.jerseyCost = 88;
+    this.transactionPercent = 0.02;
+    this.transactionFlat = 0.99;
+    this.players = 1;
+    this.totalCost = 0;
+    this.costPerPlayer = 0;
+    this.shareLink = "";
+  }
 
-        h2 {
-          text-align: center;
-          color: var(--ddd-theme-default-coalyGray);
-        }
-
-        label {
-          display: block;
-          margin-top: var(--ddd-spacing-2);
-          font-weight: var(--ddd-font-weight-bold);
-        }
-
-        input {
-          width: 100%;
-          padding: var(--ddd-spacing-2);
-          border-radius: var(--ddd-radius-md);
-          border: var(--ddd-border-md);
-          font-size: var(--ddd-font-size-s);
-          margin-bottom: var(--ddd-spacing-2);
-        }
-
-        .results {
-          margin-top: var(--ddd-spacing-4);
-          padding: var(--ddd-spacing-3);
-          border-radius: var(--ddd-radius-md);
-          background-color: var(--ddd-theme-default-skyBlue);
-          color: var(--ddd-theme-default-coalyGray);
-        }
-
-        .total {
-          font-weight: bold;
-          font-size: var(--ddd-font-size-l);
-        }
-
-        @media (prefers-color-scheme: dark) {
-          :host {
-            background-color: var(--ddd-theme-default-coalyGray);
-            color: var(--ddd-theme-default-white);
-          }
-          .results {
-            background-color: var(--ddd-theme-default-carbon);
-            color: var(--ddd-theme-default-white);
-          }
-        }
-      `,
-    ];
+  connectedCallback() {
+    super.connectedCallback();
+    // Load from URL parameters if present
+    this._loadStateFromURL();
+    this._updateCosts();
+    // Generate share link immediately on load
+    this._saveStateToURL();
   }
 
   _handleInputChange(e) {
-    const field = e.target.name;
-    const value = e.target.value;
-    this[field] = value ? parseFloat(value) || value : 0;
+    const { name, value } = e.target;
+    this[name] = name === "teamName" ? value : Number(value);
+    this._updateCosts();
+    this._saveStateToURL();
   }
 
-  get totalCost() {
-    const ice = this.iceCost * this.hours;
-    const subtotal = ice + this.coachCost + this.jerseyCost;
-    const transactionFee = subtotal * this.transactionPercent + this.transactionFlat;
-    return subtotal + transactionFee;
-  }
-
-  get costPerPlayer() {
-    return this.players > 0 ? this.totalCost / this.players : 0;
+  _updateCosts() {
+    const baseCost =
+      this.iceCost * this.hours + this.coachCost + this.jerseyCost;
+    const transactionFee =
+      baseCost * this.transactionPercent + this.transactionFlat;
+    this.totalCost = baseCost + transactionFee;
+    this.costPerPlayer = this.totalCost / this.players;
+    this.requestUpdate();
   }
 
   render() {
@@ -166,10 +121,14 @@ export class IcePlanner extends DDDSuper(LitElement) {
         <label>Transaction Fee (%)</label>
         <input
           type="number"
-          name="transactionPercent"
           step="0.01"
-          .value=${this.transactionPercent}
-          @input=${(e) => (this.transactionPercent = parseFloat(e.target.value) / 100)}
+          name="transactionPercent"
+          .value=${this.transactionPercent * 100}
+          @input=${(e) => {
+            this.transactionPercent = parseFloat(e.target.value) / 100;
+            this._updateCosts();
+            this._saveStateToURL();
+          }}
         />
 
         <label>Flat Transaction Fee ($)</label>
@@ -183,17 +142,135 @@ export class IcePlanner extends DDDSuper(LitElement) {
         <label>Number of Players</label>
         <input
           type="number"
-          name="players"
           min="1"
+          name="players"
           .value=${this.players}
           @input=${this._handleInputChange}
         />
 
         <div class="results">
           <p><strong>Total Cost:</strong> $${this.totalCost.toFixed(2)}</p>
-          <p class="total">Cost per Player: $${this.costPerPlayer.toFixed(2)}</p>
+          <p class="total">
+            <strong>Cost per Player:</strong> $${this.costPerPlayer.toFixed(2)}
+          </p>
+        </div>
+
+        <div class="share">
+          <p><strong>Share this plan:</strong></p>
+          <input
+            readonly
+            value=${this.shareLink}
+            @focus=${(e) => e.target.select()}
+          />
+          <button @click=${this._copyLink}>Copy Link</button>
         </div>
       </div>
+    `;
+  }
+
+  // --- URL state management ---
+
+  _saveStateToURL() {
+    const params = new URLSearchParams({
+      teamName: this.teamName,
+      iceCost: this.iceCost,
+      hours: this.hours,
+      coachCost: this.coachCost,
+      jerseyCost: this.jerseyCost,
+      transactionPercent: this.transactionPercent,
+      transactionFlat: this.transactionFlat,
+      players: this.players,
+    });
+    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    this.shareLink = url;
+    window.history.replaceState({}, "", url);
+  }
+
+  _loadStateFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.size === 0) return false;
+
+    this.teamName = params.get("teamName") || this.teamName;
+    this.iceCost = Number(params.get("iceCost")) || this.iceCost;
+    this.hours = Number(params.get("hours")) || this.hours;
+    this.coachCost = Number(params.get("coachCost")) || this.coachCost;
+    this.jerseyCost = Number(params.get("jerseyCost")) || this.jerseyCost;
+    this.transactionPercent = Number(params.get("transactionPercent")) || this.transactionPercent;
+    this.transactionFlat = Number(params.get("transactionFlat")) || this.transactionFlat;
+    this.players = Number(params.get("players")) || this.players;
+
+    return true;
+  }
+
+  _copyLink() {
+    navigator.clipboard.writeText(this.shareLink).then(() => {
+      alert("Link copied to clipboard!");
+    });
+  }
+
+  static get styles() {
+    return css`
+      .wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-width: 400px;
+        margin: 0 auto;
+        font-family: Arial, sans-serif;
+        padding: 16px;
+        border-radius: 12px;
+        box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+      }
+
+      h2 {
+        text-align: center;
+        color: #2c3e50;
+      }
+
+      label {
+        font-weight: bold;
+      }
+
+      input[type="text"],
+      input[type="number"] {
+        padding: 6px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+
+      .results {
+        background: #f9f9f9;
+        padding: 10px;
+        border-radius: 8px;
+        text-align: center;
+        margin-top: 12px;
+      }
+
+      .share {
+        margin-top: 12px;
+      }
+
+      .share input {
+        width: 100%;
+        font-size: 0.9em;
+        padding: 6px;
+        margin-bottom: 8px;
+      }
+
+      .share button {
+        width: 100%;
+        padding: 8px;
+        background: #3498db;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+
+      .share button:hover {
+        background: #2980b9;
+      }
     `;
   }
 }
